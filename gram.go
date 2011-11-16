@@ -8,41 +8,9 @@ package main
 
 import (
   "image"
-  "log"
-  "math"
-  "os"
   "image/draw"
-  "image/png"
+  "math"
 )
-
-const INPUT_FILENAME string = "TokyoPanoramaShredded.png"
-const OUTPUT_FILENAME string = "TokyoPanorama.png"
-const SHRED_WIDTH int = 32
-
-func ReadShreddedImageFile(filename string) image.Image {
-  f, err := os.Open(INPUT_FILENAME)
-  if err != nil {
-    log.Fatal(err)
-  }
-  defer f.Close()
-  image, err := png.Decode(f)
-  if err != nil {
-    log.Fatal(err)
-  }
-  return image
-}
-
-func WriteImageFile(filename string, image image.Image) {
-  f, err := os.Create(filename)
-  if err != nil {
-    log.Fatal(err)
-  }
-  defer f.Close()
-  err = png.Encode(f, image)
-  if err != nil {
-    log.Fatal(err)
-  }
-}
 
 func PixelChannelSimilarity(channel1, channel2 uint32) float64 {
   c1 := float64(channel1 / 0xFFFF)
@@ -60,58 +28,26 @@ func PixelSimilarity(pixel1, pixel2 image.Color) float64 {
   return similarity
 }
 
-type pixelSimilarityTestCase struct {
-  pixel1, pixel2 image.Color
-  expected float64
-}
+func CopyShredToImage(dest_image draw.Image, src_image image.Image, dest_shred_index, src_shred_index, shred_width int) {
+  // TODO: handle the case where we get a bad index
+  src_point := image.ZP // Zero point, i.e. (0,0)
+  src_point.X = shred_width * src_shred_index
 
-var pixelSimilarityTests = []pixelSimilarityTestCase {
-  pixelSimilarityTestCase {
-    image.RGBAColor { 255, 255, 255, 255 },
-    image.RGBAColor { 255, 255, 255, 255 },
-    1.0,
-  },
-  pixelSimilarityTestCase {
-    image.RGBAColor { 0, 0, 0, 0 },
-    image.RGBAColor { 0, 0, 0, 0 },
-    1.0,
-  },
-  pixelSimilarityTestCase {
-    image.RGBAColor { 255, 255, 255, 255 },
-    image.RGBAColor { 255, 0, 0, 255 },
-    1.0/3.0,
-  },
-  pixelSimilarityTestCase{
-    image.RGBAColor { 0, 0, 0, 128 },
-    image.RGBAColor { 255, 255, 255, 128},
-    0.0,
-  },
-}
-
-func TestPixelSimilarity() {
-  for _, testCase := range pixelSimilarityTests {
-    actual := PixelSimilarity(testCase.pixel1, testCase.pixel2)
-    if (actual != testCase.expected) {
-      log.Fatalf("PixelSimilarity: %+v\nActual: %v\n", testCase, actual)
-    }
+  dest_rect := image.Rectangle{
+    image.Point{
+      shred_width * dest_shred_index,
+      0,
+    },
+    image.Point{
+      (shred_width * (dest_shred_index+1)),
+      dest_image.Bounds().Max.Y,
+    },
   }
-}
+  // The second coordinate of the Rectangle (Rectangle.Max) looks counterintuitive here.
+  // image.Bounds() defines a Rectangle including Bounds.Min (i.e. (x0,y0)) but excluding Bounds.Max (i.e. (x1,y1)).
+  // That's why.
 
-func CopyShredToImage(dest_image, src_image *image.Image, strip_index int) {
-  
-}
-
-
-func main() {
-  shredded_image := ReadShreddedImageFile(INPUT_FILENAME)
-  image_size := shredded_image.Bounds().Size()
-  unshredded_image := image.NewRGBA(image_size.X, image_size.Y)
-
-  dest_rect := unshredded_image.Bounds()
-  src_rect := shredded_image.Bounds()
-  draw.Draw(unshredded_image, dest_rect, shredded_image, src_rect.Min, draw.Src)
-
-  WriteImageFile(OUTPUT_FILENAME, unshredded_image)
+  draw.Draw(dest_image, dest_rect, src_image, src_point, draw.Src)
 }
 
 /*
