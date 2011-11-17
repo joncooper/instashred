@@ -14,7 +14,11 @@ const INPUT_FILENAME string = "TokyoPanoramaShredded.png"
 const OUTPUT_FILENAME string = "TokyoPanorama.png"
 const SHRED_WIDTH int = 32
 
-func ReadShreddedImageFile(filename string) image.Image {
+var shredded_image image.Image
+var image_size image.Point
+var shred_count int
+
+func ReadPNGFile(filename string) image.Image {
   f, err := os.Open(INPUT_FILENAME)
   if err != nil {
     log.Fatal(err)
@@ -27,7 +31,7 @@ func ReadShreddedImageFile(filename string) image.Image {
   return image
 }
 
-func WriteImageFile(filename string, image image.Image) {
+func WritePNGFile(filename string, image image.Image) {
   f, err := os.Create(filename)
   if err != nil {
     log.Fatal(err)
@@ -39,15 +43,18 @@ func WriteImageFile(filename string, image image.Image) {
   }
 }
 
-func Shred(shredded_image image.Image, shred_index int) *image.RGBA {
+func GetShred(shred_index int) *image.RGBA {
   bounds := shredded_image.Bounds()
   shred := image.NewRGBA(SHRED_WIDTH, bounds.Dy())
-  draw.Draw(shred, shred.Bounds(), shredded_image, bounds.Min.Add(image.Pt(SHRED_WIDTH*shred_index, 0)), draw.Src)
+  draw_rect := shred.Bounds()
+  src_point := bounds.Min.Add(image.Pt(SHRED_WIDTH*shred_index, 0))
+
+  draw.Draw(shred, draw_rect, shredded_image, src_point, draw.Src)
   return shred
 }
 
 
-func PrintSimilarityMatrix(shredded_image image.Image, shred_count int) {
+func PrintSimilarityMatrix() {
   fmt.Printf("%6v", "")
   for i := 0; i < shred_count; i++ {
     fmt.Printf("%6d", i)
@@ -56,8 +63,8 @@ func PrintSimilarityMatrix(shredded_image image.Image, shred_count int) {
   for i := 0; i < shred_count; i++ {
     fmt.Printf("%6v", i)
     for j := 0; j < shred_count; j++ {
-      shred1 := Shred(shredded_image, i)
-      shred2 := Shred(shredded_image, j)
+      shred1 := GetShred(i)
+      shred2 := GetShred(j)
       similarity := ShredSimilarity(shred1, shred2)
       fmt.Printf("%6.2f", similarity*100)
     }
@@ -65,15 +72,15 @@ func PrintSimilarityMatrix(shredded_image image.Image, shred_count int) {
   }
 }
 
-func MaximumSimilarityShredIndex(shredded_image image.Image, left_shred_index, shred_count int) (int, float64) {
-  left_shred := Shred(shredded_image, left_shred_index)
+func MaximumSimilarityShredIndex(left_shred_index int) (int, float64) {
+  left_shred := GetShred(left_shred_index)
   maximum_similarity := 0.0
   maximum_similarity_shred_index := -1
   for i := 0; i < shred_count; i++ {
     if i == left_shred_index {
       continue
     }
-    right_shred := Shred(shredded_image, i)
+    right_shred := GetShred(i)
     similarity := ShredSimilarity(left_shred, right_shred)
     if (similarity > maximum_similarity) {
       maximum_similarity = similarity
@@ -83,34 +90,17 @@ func MaximumSimilarityShredIndex(shredded_image image.Image, left_shred_index, s
   return maximum_similarity_shred_index, maximum_similarity
 }
 
-// 8 is left 9 is right
 
-func Unshred(shredded_image image.Image, shred_count int) image.Image {
+func Unshred() image.Image {
   shred_ordering := make([]int, shred_count)
-  minimum_similarity := 1.0
-  minimum_similarity_index := -1
-
-  for i := 0; i < shred_count; i++ {
-    index, similarity := MaximumSimilarityShredIndex(shredded_image, i, shred_count)
-    if similarity < minimum_similarity {
-      minimum_similarity = similarity
-      minimum_similarity_index = index
-    }
-    shred_ordering[i] = index
+  shred_ordering[0] = 0
+  for i := 1; i < shred_count; i++ {
+    shred_ordering[i], _ = MaximumSimilarityShredIndex(shred_ordering[i-1])
   }
-  fmt.Println(shred_ordering)
-  unshredded_image := image.NewRGBA(shredded_image.Bounds().Dx(), shredded_image.Bounds().Dy())
-  current_index := 0
-
-  emitted_order := make([]int, shred_count)
+  unshredded_image := image.NewRGBA(image_size.X, image_size.Y)
   for i := 0; i < shred_count; i++ {
-    CopyShredToImage(unshredded_image, shredded_image, i, current_index, SHRED_WIDTH)
-    emitted_order[i] = current_index
-    current_index = shred_ordering[current_index]
+    CopyShredToImage(unshredded_image, shredded_image, i, shred_ordering[i], SHRED_WIDTH)
   }
-  fmt.Println(minimum_similarity_index)
-  fmt.Println(emitted_order)
-
   return unshredded_image
 }
 
@@ -121,17 +111,7 @@ type Similarity struct {
   delta float64
 }
 
-func main() {
-  shredded_image := ReadShreddedImageFile(INPUT_FILENAME)
-  image_size := shredded_image.Bounds().Size()
-  shred_count := image_size.X / SHRED_WIDTH
-
-  PrintSimilarityMatrix(shredded_image, shred_count)
-
-  unshredded_image := Unshred(shredded_image, shred_count)
-
-  PrintSimilarityMatrix(unshredded_image, shred_count)
-
+func Reindex() {
   similarities := make([]*Similarity, 20)
   for i := 0; i < 20; i++ {
 
@@ -139,8 +119,8 @@ func main() {
     similarity.left_i = i
     similarity.middle_i = (similarity.left_i + 1) % 20
     similarity.right_i = (similarity.left_i + 2) % 20
-    similarity.left_middle = ShredSimilarity(Shred(unshredded_image, similarity.left_i), Shred(unshredded_image, similarity.middle_i))
-    similarity.middle_right = ShredSimilarity(Shred(unshredded_image, similarity.middle_i), Shred(unshredded_image, similarity.right_i))
+    similarity.left_middle = ShredSimilarity(GetShred(similarity.left_i), GetShred(similarity.middle_i))
+    similarity.middle_right = ShredSimilarity(GetShred(similarity.middle_i), GetShred(similarity.right_i))
     similarity.similarity = (similarity.left_middle + similarity.middle_right) / 2.0
 
     similarities[i] = similarity
@@ -152,7 +132,7 @@ func main() {
   }
 
   for _, s := range similarities {
-    fmt.Printf("%3d%3d%3d%6.2f%6.2f%6.2f%6.2f\n",
+    fmt.Printf("%3d%3d%3d%6.2f%6.2f%6.2f%6.2f%6.2f\n",
       s.left_i, s.middle_i, s.right_i,
       s.left_middle*100.0, s.middle_right*100.0, s.similarity*100.0, s.delta*100.0)
   }
@@ -163,18 +143,20 @@ func main() {
   // while we are wrapping around the end!)
   // i.e. (0,1,2)'s similarity is > than that of (19,0,1)
   // i.e. max goodness-of-fit of position 0 while minimizing that of position last
+  // rather max(gof[i]-gof[i-1 in ring])
+}
 
-/* WriteImageFile(OUTPUT_FILENAME, unshredded_image)*/
-  /* unshredded_image := image.NewRGBA(image_size.X, image_size.Y)*/
+func main() {
+  shredded_image = ReadPNGFile(INPUT_FILENAME)
+  image_size = shredded_image.Bounds().Size()
+  shred_count = image_size.X / SHRED_WIDTH
 
-  /* for i := 0; i < 20; i++ {*/
-  /*   shred1 := Shred(shredded_image, 0)*/
-  /*   shred2 := Shred(shredded_image, i)*/
-  /*   fmt.Printf("%3d: %f\n", i, ShredSimilarity(shred1, shred2))*/
-  /*   WriteImageFile(fmt.Sprintf("%d.png", i), shred2)*/
-  /* }*/
+  if (DEBUG) {
+    PrintSimilarityMatrix()
+  }
 
-  /* WriteImageFile(OUTPUT_FILENAME, unshredded_image)*/
+  unshredded_image := Unshred()
+  WritePNGFile(OUTPUT_FILENAME, unshredded_image)
 }
 
 
