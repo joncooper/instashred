@@ -7,7 +7,6 @@ import (
   "image"
   "image/draw"
   "image/png"
-  "math"
 )
 
 const INPUT_FILENAME string = "TokyoPanoramaShredded.png"
@@ -90,60 +89,47 @@ func MaximumSimilarityShredIndex(left_shred_index int) (int, float64) {
   return maximum_similarity_shred_index, maximum_similarity
 }
 
-
 func Unshred() image.Image {
   shred_ordering := make([]int, shred_count)
+  shred_similarity := make([]float64, shred_count)
   shred_ordering[0] = 0
   for i := 1; i < shred_count; i++ {
-    shred_ordering[i], _ = MaximumSimilarityShredIndex(shred_ordering[i-1])
+    shred_ordering[i], shred_similarity[i-1] = MaximumSimilarityShredIndex(shred_ordering[i-1])
   }
-  unshredded_image := image.NewRGBA(image_size.X, image_size.Y)
-  for i := 0; i < shred_count; i++ {
-    CopyShredToImage(unshredded_image, shredded_image, i, shred_ordering[i], SHRED_WIDTH)
-  }
-  return unshredded_image
-}
-
-type Similarity struct {
-  left_i, middle_i, right_i int
-  left_middle, middle_right float64
-  similarity float64
-  delta float64
-}
-
-func Reindex() {
-  similarities := make([]*Similarity, 20)
-  for i := 0; i < 20; i++ {
-
-    similarity := new(Similarity)
-    similarity.left_i = i
-    similarity.middle_i = (similarity.left_i + 1) % 20
-    similarity.right_i = (similarity.left_i + 2) % 20
-    similarity.left_middle = ShredSimilarity(GetShred(similarity.left_i), GetShred(similarity.middle_i))
-    similarity.middle_right = ShredSimilarity(GetShred(similarity.middle_i), GetShred(similarity.right_i))
-    similarity.similarity = (similarity.left_middle + similarity.middle_right) / 2.0
-
-    similarities[i] = similarity
-  }
-  for i := 0; i < 20; i++ {
-    s1 := similarities[i]
-    s2 := similarities[(i+1)%20]
-    s1.delta = math.Fabs(s1.similarity - s2.similarity)
-  }
-
-  for _, s := range similarities {
-    fmt.Printf("%3d%3d%3d%6.2f%6.2f%6.2f%6.2f%6.2f\n",
-      s.left_i, s.middle_i, s.right_i,
-      s.left_middle*100.0, s.middle_right*100.0, s.similarity*100.0, s.delta*100.0)
-  }
-
+  last_shred := GetShred(shred_ordering[shred_count-1])
+  first_shred := GetShred(shred_ordering[0])
+  shred_similarity[shred_count-1] = ShredSimilarity(last_shred, first_shred)
 
   // rotate until the goodness-of-fit at the beginning is > that at the end
   // (this is because the end wraps around; we don't want good goodness of fit
   // while we are wrapping around the end!)
-  // i.e. (0,1,2)'s similarity is > than that of (19,0,1)
   // i.e. max goodness-of-fit of position 0 while minimizing that of position last
   // rather max(gof[i]-gof[i-1 in ring])
+  // put another way, we want the best fit possible between shreds (0,1)
+  // while minimizing the fit between shreds(19,0)
+
+  max_delta := 0.0
+  rightmost_shred := shred_ordering[shred_count-1]
+  for i, similarity := range shred_similarity {
+    left_goodness_of_fit := shred_similarity[((i-1)+shred_count)%shred_count]
+    right_goodness_of_fit := similarity
+    goodness_of_fit_delta := left_goodness_of_fit - right_goodness_of_fit
+    if goodness_of_fit_delta > max_delta {
+      rightmost_shred = i
+      max_delta = goodness_of_fit_delta
+    }
+    fmt.Println(i, similarity, left_goodness_of_fit, right_goodness_of_fit, goodness_of_fit_delta)
+    fmt.Println(rightmost_shred, max_delta)
+  }
+
+  unshredded_image := image.NewRGBA(image_size.X, image_size.Y)
+  shred_index := (rightmost_shred+1)%20
+  for i := 0; i < shred_count; i++ {
+    CopyShredToImage(unshredded_image, shredded_image, i, shred_ordering[shred_index], SHRED_WIDTH)
+    shred_index = (shred_index+1)%20
+  }
+  fmt.Println(shred_ordering)
+  return unshredded_image
 }
 
 func main() {
