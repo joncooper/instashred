@@ -33,6 +33,19 @@ var pixelSimilarityTests = []pixelSimilarityTestCase {
   },
 }
 
+func TestShredSimilarity(t *testing.T) {
+  for _, testCase := range pixelSimilarityTests {
+    shred1 := image.NewRGBA(256, 256)
+    shred2 := image.NewRGBA(256, 256)
+    for i := 0; i < 256; i++ {
+      for j := 0; j < 256; j++ {
+        shred1.Set(i, j, testCase.pixel1)
+        shred2.Set(i, j, testCase.pixel2)
+      }
+    }
+  }
+}
+
 func TestPixelSimilarity(t *testing.T) {
   for _, testCase := range pixelSimilarityTests {
     actual := PixelSimilarity(testCase.pixel1, testCase.pixel2)

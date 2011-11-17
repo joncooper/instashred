@@ -7,14 +7,26 @@
 package main
 
 import (
+  "fmt"
   "image"
   "image/draw"
+  "log"
   "math"
+  "os"
 )
 
+const DEBUG bool = false
+
+func DbgPrintln(to_print ...interface{}) (n int, err os.Error) {
+  if (DEBUG) {
+    return fmt.Println(to_print)
+  }
+  return
+}
+
 func PixelChannelSimilarity(channel1, channel2 uint32) float64 {
-  c1 := float64(channel1 / 0xFFFF)
-  c2 := float64(channel2 / 0xFFFF)
+  c1 := float64(channel1) / float64(0xFFFF)
+  c2 := float64(channel2) / float64(0xFFFF)
   return (1.0 - math.Fabs(c1 - c2)) / 1.0
 }
 
@@ -25,6 +37,33 @@ func PixelSimilarity(pixel1, pixel2 image.Color) float64 {
   similarity += (PixelChannelSimilarity(p1r, p2r) / 3.0)
   similarity += (PixelChannelSimilarity(p1g, p2g) / 3.0)
   similarity += (PixelChannelSimilarity(p1b, p2b) / 3.0)
+  return similarity
+}
+
+// Compare the rightmost column of the left shred to the leftmost column of the right shred
+//
+func ShredSimilarity(left_shred, right_shred image.Image) float64 {
+  left_shred_rightmost_column_index := left_shred.Bounds().Max.X - 1
+  left_shred_height := left_shred.Bounds().Max.Y
+
+  right_shred_leftmost_column_index := right_shred.Bounds().Min.X
+  right_shred_height := right_shred.Bounds().Max.Y
+
+  if (left_shred_height != right_shred_height) {
+    log.Fatal("Shreds have different Y heights. (%v vs %v).\n", left_shred_height, right_shred_height)
+  }
+
+  similarity := 0.0
+  for i := 0; i < left_shred_height; i++ {
+    left_pixel := left_shred.At(left_shred_rightmost_column_index, i)
+    right_pixel := right_shred.At(right_shred_leftmost_column_index, i)
+    pixel_similarity := PixelSimilarity(left_pixel, right_pixel)
+
+    DbgPrintln(i, left_pixel, right_pixel, pixel_similarity)
+
+    similarity += pixel_similarity
+  }
+  similarity /= float64(left_shred_height)
   return similarity
 }
 
@@ -46,79 +85,5 @@ func CopyShredToImage(dest_image draw.Image, src_image image.Image, dest_shred_i
   // The second coordinate of the Rectangle (Rectangle.Max) looks counterintuitive here.
   // image.Bounds() defines a Rectangle including Bounds.Min (i.e. (x0,y0)) but excluding Bounds.Max (i.e. (x1,y1)).
   // That's why.
-
   draw.Draw(dest_image, dest_rect, src_image, src_point, draw.Src)
 }
-
-/*
-import (
-  "crypto/md5"
-  "flag"
-  "fmt"
-  "io/ioutil"
-  "os"
-  "path"
-  "path/filepath"
-)
-
-var verbose *bool = flag.Bool("verbose", false, "Print the list of duplicate files.")
-var rootDir string = "."
-var fullPathsByFilename map[string][]string
-
-type DupeChecker struct{}
-
-func (dc DupeChecker) VisitDir(fullpath string, f *os.FileInfo) bool {
-  return true
-}
-
-func (dc DupeChecker) VisitFile(fullpath string, f *os.FileInfo) {
-  filename := path.Base(fullpath)
-  fullPathsByFilename[filename] = append(fullPathsByFilename[filename], fullpath)
-}
-
-func MD5OfFile(fullpath string) []byte {
-  if contents, err := ioutil.ReadFile(fullpath); err == nil { 
-    md5sum := md5.New()
-    md5sum.Write(contents)
-    return md5sum.Sum()
-  }
-  return nil
-}
-
-func PrintResults() {
-  dupes := 0
-  for key, value := range fullPathsByFilename {
-    if (len(value) < 2) {
-      continue
-    }
-    dupes++
-    if (*verbose) {
-      println(key, ":")
-      for _, filename := range value {
-        println("  ", filename)
-        fmt.Printf("    %x\n", MD5OfFile(filename))
-      }
-    }
-  }
-  println("Total duped files found:", dupes)
-}
-
-func FindDupes(root string) {
-  fullPathsByFilename = make(map[string][]string)
-  filepath.Walk(root, DupeChecker{}, nil)
-}
-
-func ParseArgs() {
-  flag.Parse()
-  if (len(flag.Args()) > 0) { 
-    rootDir = flag.Arg(0)
-  } 
-}
-
-func main() {
-  ParseArgs()
-  FindDupes(rootDir)
-  PrintResults()
-}
-
-*/
